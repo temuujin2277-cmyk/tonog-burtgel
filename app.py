@@ -1,57 +1,108 @@
+"""
+Сургуулийн тоног төхөөрөмж бүртгэх апп (v2)
+- Нууц үгээр нэвтрэх (st.secrets["APP_PASSWORD"])
+- Өгөгдөл устахгүй: Postgres (Supabase) -> st.secrets["DATABASE_URL"]
+  DATABASE_URL байхгүй бол локал assets.db (SQLite) ашиглана.
+"""
+
+import hmac
 import io
-import sqlite3
 from datetime import datetime
 
 import pandas as pd
 import qrcode
 import streamlit as st
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, insert, select
 
-DB_PATH = "assets.db"
 STATUSES = ["Хэвийн", "Засвартай", "Эвдэрсэн", "Актласан"]
+
+st.set_page_config(page_title="Хөрөнгө бүртгэл", page_icon="🏫", layout="wide")
+
+
+# ---------- Secrets ----------
+def secret(key, default=None):
+    try:
+        return st.secrets[key]
+    except Exception:
+        return default
+
+
+# ---------- Нууц үг ----------
+def require_login():
+    expected = secret("APP_PASSWORD")
+    if not expected:
+        st.error("APP_PASSWORD тохируулаагүй байна. Secrets хэсэгт нэмнэ үү.")
+        st.stop()
+
+    if st.session_state.get("authed"):
+        with st.sidebar:
+            if st.button("Гарах"):
+                st.session_state["authed"] = False
+                st.rerun()
+        return
+
+    st.title("🔒 Нэвтрэх")
+    with st.form("login_form"):
+        pw = st.text_input("Нууц үг", type="password")
+        ok = st.form_submit_button("Нэвтрэх")
+    if ok:
+        if hmac.compare_digest(pw.encode(), str(expected).encode()):
+            st.session_state["authed"] = True
+            st.rerun()
+        else:
+            st.error("Нууц үг буруу байна.")
+    st.stop()
 
 
 # ---------- Өгөгдлийн сан ----------
-def get_conn():
-    return sqlite3.connect(DB_PATH)
+metadata = MetaData()
+assets = Table(
+    "assets",
+    metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True),
+    Column("name", String(200), nullable=False),
+    Column("location", String(200), nullable=False),
+    Column("quantity", Integer, nullable=False),
+    Column("status", String(50), nullable=False),
+    Column("created_at", String(30), nullable=False),
+)
 
 
-def init_db():
-    with get_conn() as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS assets (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                name       TEXT    NOT NULL,
-                location   TEXT    NOT NULL,
-                quantity   INTEGER NOT NULL CHECK (quantity > 0),
-                status     TEXT    NOT NULL,
-                created_at TEXT    NOT NULL
-            )
-            """
-        )
+@st.cache_resource
+def get_engine():
+    url = secret("DATABASE_URL", "sqlite:///assets.db")
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    engine = create_engine(url, pool_pre_ping=True)
+    metadata.create_all(engine)  # хүснэгт байхгүй бол үүсгэнэ
+    return engine
 
 
 def add_asset(name, location, quantity, status):
-    with get_conn() as conn:
+    with get_engine().begin() as conn:
         conn.execute(
-            "INSERT INTO assets (name, location, quantity, status, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (name, location, quantity, status, datetime.now().strftime("%Y-%m-%d %H:%M")),
+            insert(assets).values(
+                name=name,
+                location=location,
+                quantity=quantity,
+                status=status,
+                created_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
+            )
         )
 
 
 def load_assets() -> pd.DataFrame:
-    with get_conn() as conn:
-        return pd.read_sql_query(
-            "SELECT id, name, location, quantity, status, created_at "
-            "FROM assets ORDER BY id DESC",
-            conn,
-        )
+    with get_engine().connect() as conn:
+        return pd.read_sql_query(select(assets).order_by(assets.c.id.desc()), conn)
 
 
 # ---------- QR код ----------
 def make_qr_png(text: str) -> bytes:
-    qr = qrcode.QRCode(box_size=12, border=4, error_correction=qrcode.constants.ERROR_CORRECT_L)
+    qr = qrcode.QRCode(
+        box_size=12,
+        border=4,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+    )
     qr.add_data(text)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
@@ -63,9 +114,9 @@ def make_qr_png(text: str) -> bytes:
 def asset_payload(row) -> str:
     return f"ASSET-{row['id']}"
 
+
 # ---------- Интерфейс ----------
-st.set_page_config(page_title="Хөрөнгө бүртгэл", page_icon="🏫", layout="wide")
-init_db()
+require_login()
 
 st.title("🏫 Сургуулийн тоног төхөөрөмжийн бүртгэл")
 
@@ -117,7 +168,6 @@ with tab_list:
                     "created_at": "Бүртгэсэн огноо",
                 }
             ),
-            use_container_width=True,
             hide_index=True,
         )
         st.caption(f"Нийт {len(view)} бичлэг")
@@ -141,7 +191,14 @@ with tab_qr:
         with col_img:
             st.image(png, width=400)
         with col_info:
-            st.text(f"ID: {row['id']}\nНэр: {row['name']}\nБайршил: {row['location']}\nТоо: {row['quantity']}\nТөлөв: {row['status']}")
+            st.text(
+                f"ID: {row['id']}\n"
+                f"Нэр: {row['name']}\n"
+                f"Байршил: {row['location']}\n"
+                f"Тоо: {row['quantity']}\n"
+                f"Төлөв: {row['status']}\n"
+                f"QR утга: {payload}"
+            )
             st.download_button(
                 "⬇️ QR кодыг татах (PNG)",
                 data=png,
