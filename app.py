@@ -61,7 +61,7 @@ def make_qr_png(text: str) -> bytes:
 
 
 def asset_payload(row) -> str:
-    return f"ID:{row['id']} {row['name']} | {row['location']} | {row['quantity']}ш | {row['status']}"
+    return f"ASSET-{row['id']}"
 
 # ---------- Интерфейс ----------
 st.set_page_config(page_title="Хөрөнгө бүртгэл", page_icon="🏫", layout="wide")
@@ -141,7 +141,7 @@ with tab_qr:
         with col_img:
             st.image(png, width=400)
         with col_info:
-            st.text(payload)
+            st.text(f"ID: {row['id']}\nНэр: {row['name']}\nБайршил: {row['location']}\nТоо: {row['quantity']}\nТөлөв: {row['status']}")
             st.download_button(
                 "⬇️ QR кодыг татах (PNG)",
                 data=png,
