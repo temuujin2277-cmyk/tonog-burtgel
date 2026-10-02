@@ -1,44 +1,32 @@
+"""ХААИС-ийн тоног төхөөрөмжийн бүртгэл — v5
+Streamlit + SQLAlchemy + Supabase/Postgres.
 """
-Сургуулийн тоног төхөөрөмж бүртгэх апп (v4)
-- Хоёр түвшний нууц үг:
-    APP_PASSWORD    -> Админ (бүртгэх, засах, устгах, жагсаалт, QR)
-    VIEWER_PASSWORD -> Багш (бүртгэх, жагсаалт харах, QR үүсгэх; засах/устгах эрхгүй)
-- "Бүртгэсэн багшийн нэр" талбар (registered_by)
-- Өгөгдөл: Postgres (Supabase) -> st.secrets["DATABASE_URL"]
-  DATABASE_URL байхгүй бол локал assets.db (SQLite) ашиглана.
-"""
-
 import hmac
 import io
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
 
 import pandas as pd
 import qrcode
 import streamlit as st
-from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, delete, insert, inspect, select, text, update
+from sqlalchemy import (Column, DateTime, Integer, MetaData, Numeric, String, Table,
+                        Text, create_engine, delete, insert, inspect, select, text, update)
 
-STATUSES = ["Хэвийн", "Засвартай", "Эвдэрсэн", "Актласан"]
-
-st.set_page_config(page_title="Тоног төхөөрөмжийн бүртгэл", page_icon="🏫", layout="wide", initial_sidebar_state="expanded")
-
+st.set_page_config(page_title="ХААИС | Тоног төхөөрөмж", page_icon="🏫", layout="wide")
 LOGO_PATH = Path(__file__).parent / "assets" / "HAAIS.png"
+STATUSES = ["Хэвийн", "Засвартай", "Эвдэрсэн", "Актласан"]
+ROLES = ["admin", "treasurer", "teacher", "viewer"]
 
 st.markdown("""
 <style>
 [data-testid="stAppViewContainer"]{background:radial-gradient(circle at 10% 0%,#20233a 0,#0d0f16 42%,#0b0c11 100%)}
-[data-testid="stHeader"]{background:transparent}[data-testid="stSidebar"]{background:rgba(18,20,30,.92);border-right:1px solid rgba(139,92,246,.18)}
-.block-container{max-width:1220px;padding-top:2.5rem;padding-bottom:4rem} h1{letter-spacing:-.035em;font-weight:800!important}
-[data-testid="stForm"]{background:rgba(23,25,35,.82);border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:1.35rem}
-.hero{padding:1.4rem 1.55rem;border:1px solid rgba(139,92,246,.26);border-radius:20px;background:linear-gradient(120deg,rgba(124,58,237,.22),rgba(6,182,212,.08));margin-bottom:1.25rem}
-.hero-kicker{color:#a78bfa;text-transform:uppercase;letter-spacing:.14em;font-size:.72rem;font-weight:700}.hero-title{font-size:2.2rem;line-height:1.1;font-weight:800;margin:.35rem 0}.hero-subtitle{color:#aeb5c7;margin:0}
-.metric{background:linear-gradient(145deg,rgba(31,34,48,.96),rgba(20,22,31,.92));border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:1rem 1.1rem;min-height:104px}.metric-label{color:#9ca3b8;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em}.metric-value{color:#f8fafc;font-size:1.75rem;font-weight:800;margin-top:.4rem}.metric-note{color:#8b5cf6;font-size:.78rem;margin-top:.1rem}.section-label{color:#aeb5c7;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;margin:1.1rem 0 .55rem}
-button[kind="primary"]{background:linear-gradient(135deg,#8b5cf6,#6366f1)!important;border:0!important}[data-testid="stDataFrame"]{border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,.14)}.stTabs [data-baseweb="tab-list"]{gap:8px;border-bottom:1px solid rgba(148,163,184,.14)}.stTabs [data-baseweb="tab"]{padding:.7rem 1rem}@media(max-width:700px){.hero-title{font-size:1.65rem}.block-container{padding:1rem}}
+[data-testid="stHeader"]{background:transparent}[data-testid="stSidebar"]{background:rgba(18,20,30,.94);border-right:1px solid rgba(139,92,246,.2)}
+.block-container{max-width:1280px;padding-top:1.8rem;padding-bottom:4rem}.hero{padding:1.35rem 1.5rem;border:1px solid rgba(139,92,246,.3);border-radius:20px;background:linear-gradient(120deg,rgba(124,58,237,.22),rgba(6,182,212,.08));margin-bottom:1.2rem}
+.hero-kicker,.section-label{color:#a78bfa;text-transform:uppercase;letter-spacing:.12em;font-size:.72rem;font-weight:700}.hero-title{font-size:2.15rem;font-weight:800;margin:.3rem 0}.hero-subtitle{color:#aeb5c7;margin:0}.metric{background:linear-gradient(145deg,rgba(31,34,48,.96),rgba(20,22,31,.92));border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:1rem;min-height:100px}.metric-label{color:#9ca3b8;font-size:.75rem;text-transform:uppercase}.metric-value{color:#f8fafc;font-size:1.7rem;font-weight:800;margin-top:.35rem}.metric-note{color:#8b5cf6;font-size:.76rem}[data-testid="stForm"]{background:rgba(23,25,35,.82);border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:1.15rem}.stTabs [data-baseweb="tab-list"]{gap:8px;border-bottom:1px solid rgba(148,163,184,.14)}button[kind="primary"]{background:linear-gradient(135deg,#8b5cf6,#6366f1)!important;border:0!important}@media(max-width:700px){.hero-title{font-size:1.6rem}.block-container{padding:1rem}}
 </style>
 """, unsafe_allow_html=True)
 
 
-# ---------- Secrets ----------
 def secret(key, default=None):
     try:
         return st.secrets[key]
@@ -46,373 +34,255 @@ def secret(key, default=None):
         return default
 
 
-# ---------- Нууц үг ----------
-def matches(pw, expected):
-    return bool(expected) and hmac.compare_digest(pw.encode(), str(expected).encode())
+def matches(value, expected):
+    return bool(expected) and hmac.compare_digest(str(value).encode(), str(expected).encode())
 
 
-def require_login() -> str:
-    admin_pw = secret("APP_PASSWORD")
-    viewer_pw = secret("VIEWER_PASSWORD")
-    if not admin_pw:
-        st.error("APP_PASSWORD тохируулаагүй байна. Secrets хэсэгт нэмнэ үү.")
-        st.stop()
-
-    role = st.session_state.get("role")
-    if role:
-        with st.sidebar:
-            if LOGO_PATH.exists():
-                st.image(str(LOGO_PATH), width=90)
-            st.markdown("**ХААИС**  \nТоног төхөөрөмжийн систем")
-            st.caption("Эрх: " + ("Админ" if role == "admin" else "Багш"))
-            if st.button("Гарах"):
-                st.session_state["role"] = None
-                st.rerun()
-        return role
-
-    st.title("🔒 Нэвтрэх")
-    with st.form("login_form"):
-        pw = st.text_input("Нууц үг", type="password")
-        ok = st.form_submit_button("Нэвтрэх")
-    if ok:
-        if matches(pw, admin_pw):
-            st.session_state["role"] = "admin"
-            st.rerun()
-        elif matches(pw, viewer_pw):
-            st.session_state["role"] = "viewer"
-            st.rerun()
-        else:
-            st.error("Нууц үг буруу байна.")
-    st.stop()
-
-
-# ---------- Өгөгдлийн сан ----------
-metadata = MetaData()
-assets = Table(
-    "assets",
-    metadata,
-    Column("id", Integer, primary_key=True, autoincrement=True),
-    Column("name", String(200), nullable=False),
-    Column("location", String(200), nullable=False),
-    Column("quantity", Integer, nullable=False),
-    Column("status", String(50), nullable=False),
-    Column("created_at", String(30), nullable=False),
-    Column("registered_by", String(100), nullable=True),
-)
-
-
-@st.cache_resource
 def get_engine():
     url = secret("DATABASE_URL", "sqlite:///assets.db")
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql://", 1)
-    if url.startswith("postgresql://"):
+    if url.startswith("postgresql://") and "+psycopg2" not in url:
         url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     engine = create_engine(url, pool_pre_ping=True)
     metadata.create_all(engine)
-    # Хуучин хүснэгтэд registered_by багана байхгүй бол автоматаар нэмнэ
-    columns = [c["name"] for c in inspect(engine).get_columns("assets")]
-    if "registered_by" not in columns:
-        with engine.begin() as conn:
-            conn.execute(text("ALTER TABLE assets ADD COLUMN registered_by VARCHAR(100)"))
+    # Existing database migration: add new fields without deleting old records.
+    existing = {c["name"] for c in inspect(engine).get_columns("assets")}
+    for name, sql_type in {
+        "serial_number":"VARCHAR(120)", "purchase_date":"VARCHAR(30)", "purchase_price":"NUMERIC(14,2)",
+        "warranty_until":"VARCHAR(30)", "image_url":"TEXT", "notes":"TEXT", "updated_at":"VARCHAR(30)"
+    }.items():
+        if name not in existing:
+            with engine.begin() as conn:
+                conn.execute(text(f"ALTER TABLE assets ADD COLUMN {name} {sql_type}"))
     return engine
 
 
-def add_asset(name, location, quantity, status, registered_by):
-    with get_engine().begin() as conn:
-        conn.execute(
-            insert(assets).values(
-                name=name,
-                location=location,
-                quantity=quantity,
-                status=status,
-                registered_by=registered_by,
-                created_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
-            )
-        )
+metadata = MetaData()
+assets = Table("assets", metadata,
+    Column("id", Integer, primary_key=True, autoincrement=True), Column("name", String(200), nullable=False),
+    Column("location", String(200), nullable=False), Column("quantity", Integer, nullable=False),
+    Column("status", String(50), nullable=False), Column("created_at", String(30), nullable=False),
+    Column("registered_by", String(100)), Column("serial_number", String(120)), Column("purchase_date", String(30)),
+    Column("purchase_price", Numeric(14,2)), Column("warranty_until", String(30)), Column("image_url", Text),
+    Column("notes", Text), Column("updated_at", String(30)))
+repairs = Table("repairs", metadata, Column("id", Integer, primary_key=True), Column("asset_id", Integer), Column("issue", Text), Column("repair_date", String(30)), Column("completed_date", String(30)), Column("cost", Numeric(14,2)), Column("status", String(40)), Column("note", Text))
+transfers = Table("transfers", metadata, Column("id", Integer, primary_key=True), Column("asset_id", Integer), Column("from_location", String(200)), Column("to_location", String(200)), Column("transfer_date", String(30)), Column("transferred_by", String(100)), Column("note", Text))
+users = Table("users", metadata, Column("id", Integer, primary_key=True), Column("username", String(100), unique=True), Column("role", String(40)), Column("active", Integer, default=1))
 
 
-def update_asset(asset_id, name, location, quantity, status, registered_by):
-    with get_engine().begin() as conn:
-        conn.execute(
-            update(assets)
-            .where(assets.c.id == asset_id)
-            .values(
-                name=name,
-                location=location,
-                quantity=quantity,
-                status=status,
-                registered_by=registered_by,
-            )
-        )
-
-
-def delete_asset(asset_id):
-    with get_engine().begin() as conn:
-        conn.execute(delete(assets).where(assets.c.id == asset_id))
-
-
-def load_assets() -> pd.DataFrame:
+def load_assets():
     with get_engine().connect() as conn:
         df = pd.read_sql_query(select(assets).order_by(assets.c.id.desc()), conn)
-    df["registered_by"] = df["registered_by"].fillna("")
+    for col in ["registered_by", "serial_number", "purchase_date", "warranty_until", "image_url", "notes", "updated_at"]:
+        if col in df: df[col] = df[col].fillna("")
     return df
 
 
-def get_asset(asset_id):
+def asset_by_id(asset_id):
     with get_engine().connect() as conn:
-        r = conn.execute(select(assets).where(assets.c.id == asset_id)).mappings().first()
-    return dict(r) if r else None
+        row = conn.execute(select(assets).where(assets.c.id == int(asset_id))).mappings().first()
+    return dict(row) if row else None
 
 
-# ---------- QR код ----------
-def make_qr_png(text_value: str) -> bytes:
-    qr = qrcode.QRCode(
-        box_size=12,
-        border=4,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-    )
-    qr.add_data(text_value)
-    qr.make(fit=True)
-    img = qr.make_image(fill_color="black", back_color="white")
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return buf.getvalue()
+def save_asset(values, asset_id=None):
+    values["updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    with get_engine().begin() as conn:
+        if asset_id:
+            conn.execute(update(assets).where(assets.c.id == int(asset_id)).values(**values))
+        else:
+            values["created_at"] = values.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
+            conn.execute(insert(assets).values(**values))
 
 
-APP_URL_DEFAULT = "https://tonog-burtgel-9kpnaomprgjcdxjgbkhvc5.streamlit.app"
+def upload_image(uploaded):
+    if not uploaded: return ""
+    # Supabase Storage is optional; configure SUPABASE_URL, SUPABASE_KEY and ASSET_BUCKET.
+    try:
+        from supabase import create_client
+        client = create_client(secret("SUPABASE_URL"), secret("SUPABASE_KEY"))
+        bucket = secret("ASSET_BUCKET", "asset-images")
+        path = f"{datetime.now().strftime('%Y%m%d%H%M%S')}_{uploaded.name}"
+        client.storage.from_(bucket).upload(path, uploaded.getvalue(), {"content-type": uploaded.type, "upsert": "true"})
+        return client.storage.from_(bucket).get_public_url(path)
+    except Exception as exc:
+        st.warning(f"Зураг хадгалах тохиргоо дутуу байна: {exc}")
+        return ""
 
 
-def asset_payload(row) -> str:
-    base = str(secret("APP_URL", APP_URL_DEFAULT)).rstrip("/")
+def qr_png(value):
+    qr = qrcode.QRCode(box_size=12, border=4); qr.add_data(value); qr.make(fit=True)
+    buf = io.BytesIO(); qr.make_image(fill_color="black", back_color="white").save(buf, format="PNG"); return buf.getvalue()
+
+
+def app_url(row):
+    base = str(secret("APP_URL", "https://tonog-burtgel-9kpnaomprgjcdxjgbkhvc5.streamlit.app")).rstrip("/")
     return f"{base}/?id={row['id']}"
 
 
-def asset_options(df):
-    return {f"#{r['id']} — {r['name']} ({r['location']})": r for _, r in df.iterrows()}
+def require_login():
+    role = st.session_state.get("role")
+    if role: return role
+    st.markdown("<div class='hero'><div class='hero-kicker'>ХААИС</div><div class='hero-title'>Нэвтрэх</div><p class='hero-subtitle'>Тоног төхөөрөмжийн бүртгэлийн систем</p></div>", unsafe_allow_html=True)
+    with st.form("login"):
+        password = st.text_input("Нууц үг", type="password")
+        ok = st.form_submit_button("Нэвтрэх", type="primary", use_container_width=True)
+    if ok:
+        checks = [("admin", secret("APP_PASSWORD")), ("treasurer", secret("TREASURER_PASSWORD")), ("teacher", secret("TEACHER_PASSWORD")), ("viewer", secret("VIEWER_PASSWORD"))]
+        for candidate, expected in checks:
+            if matches(password, expected): st.session_state["role"] = candidate; st.rerun()
+        st.error("Нууц үг буруу байна.")
+    st.stop()
 
 
-# ---------- QR-аар нээгдсэн хөрөнгийн карт ----------
-def render_scanned_asset():
-    raw = st.query_params.get("id")
-    if not raw:
-        return
-    try:
-        asset_id = int(raw)
-    except (TypeError, ValueError):
-        st.warning("QR кодын дугаар буруу байна.")
-        return
-
-    row = get_asset(asset_id)
-    with st.container(border=True):
-        if row is None:
-            st.warning(f"#{asset_id} дугаартай хөрөнгө олдсонгүй.")
-        else:
-            st.subheader(f"🔎 {row['name']}")
-            c1, c2 = st.columns(2)
-            c1.markdown(
-                f"**ID:** {row['id']}  \n"
-                f"**Анги / байршил:** {row['location']}  \n"
-                f"**Тоо ширхэг:** {row['quantity']}"
-            )
-            c2.markdown(
-                f"**Төлөв:** {row['status']}  \n"
-                f"**Бүртгэсэн багш:** {row['registered_by'] or '—'}  \n"
-                f"**Бүртгэсэн огноо:** {row['created_at']}"
-            )
-        if st.button("✖ Хаах", key="close_scan"):
-            st.query_params.clear()
-            st.rerun()
+def header(role):
+    with st.sidebar:
+        if LOGO_PATH.exists(): st.image(str(LOGO_PATH), width=90)
+        st.markdown("**ХААИС**  \nТоног төхөөрөмжийн систем")
+        st.caption(f"Эрх: {role}")
+        if st.button("Гарах", use_container_width=True): st.session_state.clear(); st.rerun()
 
 
-# ---------- Табууд ----------
-def render_add():
-    registrant = st.text_input(
-        "Бүртгэсэн багшийн нэр", key="registrant", placeholder="Жишээ: Б. Болд"
-    )
-    st.markdown('<div class="section-label">Шинэ хөрөнгө оруулах</div>', unsafe_allow_html=True)
-    with st.form("add_form", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            name = st.text_input("Хөрөнгийн нэр", placeholder="Жишээ: Проектор")
-        with c2:
-            location = st.text_input("Анги / байршил", placeholder="Жишээ: 12а анги, 204 тоот")
-        c3, c4 = st.columns(2)
-        with c3:
-            quantity = st.number_input("Тоо ширхэг", min_value=1, value=1, step=1)
-        with c4:
-            status = st.selectbox("Төлөв", STATUSES)
-        submitted = st.form_submit_button("＋  Бүртгэх", type="primary", use_container_width=True)
+def overview(df):
+    total = int(df.quantity.sum()) if not df.empty else 0; healthy = int((df.status == "Хэвийн").sum()) if not df.empty else 0; attention = int(df.status.isin(["Засвартай","Эвдэрсэн"]).sum()) if not df.empty else 0
+    cols = st.columns(4)
+    cards = [("Нийт төрөл",len(df),"бүртгэл"),("Нийт тоо ширхэг",total,"тоног төхөөрөмж"),("Хэвийн төлөв",healthy,"төрөл"),("Анхаарах",attention,"засвар / эвдрэл")]
+    for col,(label,value,note) in zip(cols,cards): col.markdown(f'<div class="metric"><div class="metric-label">{label}</div><div class="metric-value">{value}</div><div class="metric-note">{note}</div></div>',unsafe_allow_html=True)
 
+
+def add_form(role):
+    if role not in ROLES[:3]: st.info("Танд шинэ бүртгэл нэмэх эрх байхгүй."); return
+    st.markdown('<div class="section-label">Шинэ тоног төхөөрөмж</div>', unsafe_allow_html=True)
+    with st.form("add_asset", clear_on_submit=True):
+        a,b = st.columns(2); name = a.text_input("Нэр *", placeholder="Проектор"); location = b.text_input("Байршил *", placeholder="12А анги")
+        c,d = st.columns(2); serial = c.text_input("Серийн дугаар"); quantity = d.number_input("Тоо ширхэг",1,10000,1)
+        e,f = st.columns(2); status = e.selectbox("Төлөв", STATUSES); registered = f.text_input("Бүртгэсэн багш")
+        g,h = st.columns(2); purchase_date = g.date_input("Худалдан авсан огноо", value=None); warranty = h.date_input("Баталгаат хугацаа дуусах", value=None)
+        i,j = st.columns(2); price = i.number_input("Үнэ (₮)", min_value=0.0, step=1000.0); image = j.file_uploader("Зураг", type=["png","jpg","jpeg"])
+        notes = st.text_area("Тайлбар"); submitted = st.form_submit_button("＋ Бүртгэх", type="primary", use_container_width=True)
     if submitted:
-        if not registrant.strip():
-            st.error("Дээд талын «Бүртгэсэн багшийн нэр» талбарыг бөглөнө үү.")
-        elif not name.strip() or not location.strip():
-            st.error("Нэр болон байршлыг заавал бөглөнө үү.")
-        else:
-            add_asset(name.strip(), location.strip(), int(quantity), status, registrant.strip())
-            st.success(f"✅ «{name.strip()}» амжилттай бүртгэгдлээ.")
+        if not name.strip() or not location.strip(): st.error("Нэр болон байршлыг заавал бөглөнө үү."); return
+        image_url = upload_image(image)
+        save_asset(dict(name=name.strip(),location=location.strip(),quantity=int(quantity),status=status,registered_by=registered.strip(),serial_number=serial.strip(),purchase_date=str(purchase_date) if purchase_date else "",warranty_until=str(warranty) if warranty else "",purchase_price=float(price),image_url=image_url,notes=notes.strip()))
+        st.success(f"✅ {name} амжилттай бүртгэгдлээ."); st.rerun()
 
 
-def render_list():
-    df = load_assets()
-    if df.empty:
-        st.info("Одоогоор бүртгэгдсэн хөрөнгө алга.")
-        return
-
-    c1, c2 = st.columns(2)
-    search = c1.text_input("🔍 Нэр / байршил / багшаар хайх")
-    status_filter = c2.multiselect("Төлвөөр шүүх", STATUSES)
-
-    view = df
-    if search:
-        mask = (
-            view["name"].str.contains(search, case=False, na=False)
-            | view["location"].str.contains(search, case=False, na=False)
-            | view["registered_by"].str.contains(search, case=False, na=False)
-        )
-        view = view[mask]
-    if status_filter:
-        view = view[view["status"].isin(status_filter)]
-
-    st.dataframe(
-        view.rename(
-            columns={
-                "id": "ID",
-                "name": "Нэр",
-                "location": "Анги / байршил",
-                "quantity": "Тоо",
-                "status": "Төлөв",
-                "created_at": "Бүртгэсэн огноо",
-                "registered_by": "Бүртгэсэн багш",
-            }
-        ),
-        hide_index=True,
-    )
-    st.caption(f"Нийт {len(view)} бичлэг")
+def list_view(df):
+    if df.empty: st.info("Одоогоор бүртгэл алга."); return
+    a,b,c = st.columns([2,1,1]); query = a.text_input("🔍 Нэр, серийн дугаар, байршил хайх"); statuses = b.multiselect("Төлөв", STATUSES); locations = c.multiselect("Байршил", sorted(df.location.dropna().unique()))
+    view=df.copy(); query=query.lower().strip()
+    if query: view=view[view.apply(lambda r: query in f"{r.name} {r.location} {r.serial_number} {r.registered_by}".lower(),axis=1)]
+    if statuses: view=view[view.status.isin(statuses)]
+    if locations: view=view[view.location.isin(locations)]
+    cols={"id":"ID","name":"Нэр","serial_number":"Серийн дугаар","location":"Байршил","quantity":"Тоо","status":"Төлөв","purchase_price":"Үнэ","registered_by":"Бүртгэсэн"}
+    st.dataframe(view[[c for c in cols if c in view]].rename(columns=cols), hide_index=True, use_container_width=True)
+    st.caption(f"{len(view)} бичлэг · {int(view.quantity.sum())} ширхэг")
 
 
-def render_edit():
-    flash = st.session_state.pop("flash", None)
-    if flash:
-        st.success(flash)
-
-    df = load_assets()
-    if df.empty:
-        st.info("Засах хөрөнгө алга.")
-        return
-
-    options = asset_options(df)
-    choice = st.selectbox("Засах хөрөнгө сонгох", list(options.keys()), key="edit_choice")
-    row = options[choice]
-    rid = int(row["id"])
-
-    with st.form(f"edit_form_{rid}"):
-        e_name = st.text_input("Хөрөнгийн нэр", value=row["name"], key=f"e_name_{rid}")
-        e_loc = st.text_input("Анги / байршил", value=row["location"], key=f"e_loc_{rid}")
-        e_qty = st.number_input(
-            "Тоо ширхэг", min_value=1, value=int(row["quantity"]), step=1, key=f"e_qty_{rid}"
-        )
-        idx = STATUSES.index(row["status"]) if row["status"] in STATUSES else 0
-        e_status = st.selectbox("Төлөв", STATUSES, index=idx, key=f"e_status_{rid}")
-        e_by = st.text_input(
-            "Бүртгэсэн багшийн нэр", value=row["registered_by"], key=f"e_by_{rid}"
-        )
-        save = st.form_submit_button("💾 Хадгалах")
-
-    if save:
-        if not e_name.strip() or not e_loc.strip():
-            st.error("Нэр болон байршлыг заавал бөглөнө үү.")
-        else:
-            update_asset(rid, e_name.strip(), e_loc.strip(), int(e_qty), e_status, e_by.strip())
-            st.session_state["flash"] = f"✅ #{rid} амжилттай шинэчлэгдлээ."
-            st.rerun()
-
-    st.divider()
-    st.subheader("Устгах")
-    confirm = st.checkbox("Энэ хөрөнгийг устгахыг зөвшөөрч байна", key=f"confirm_del_{rid}")
-    if st.button("🗑️ Устгах", disabled=not confirm, key=f"del_{rid}"):
-        delete_asset(rid)
-        st.session_state["flash"] = f"🗑️ #{rid} устгагдлаа."
+def edit_view(df, role):
+    if role not in ["admin","treasurer"]: st.info("Зөвхөн админ болон нярав засварлана."); return
+    if df.empty: st.info("Засах бүртгэл алга."); return
+    opts={f"#{r.id} — {r['name']} ({r['location']})":int(r.id) for _,r in df.iterrows()}; choice=st.selectbox("Тоног төхөөрөмж сонгох",list(opts)); row=asset_by_id(opts[choice]); rid=int(row["id"])
+    with st.form(f"edit_{rid}"):
+        a,b=st.columns(2); name=a.text_input("Нэр",row["name"]); location=b.text_input("Байршил",row["location"]); c,d=st.columns(2); serial=c.text_input("Серийн дугаар",row.get("serial_number") or ""); status=d.selectbox("Төлөв",STATUSES,index=STATUSES.index(row["status"]) if row["status"] in STATUSES else 0); by=st.text_input("Бүртгэсэн багш",row.get("registered_by") or ""); notes=st.text_area("Тайлбар",row.get("notes") or ""); save=st.form_submit_button("💾 Хадгалах",type="primary")
+    if save: save_asset(dict(name=name.strip(),location=location.strip(),quantity=int(row["quantity"]),status=status,registered_by=by.strip(),serial_number=serial.strip(),notes=notes.strip()),rid); st.success("Шинэчлэгдлээ."); st.rerun()
+    if st.checkbox("Устгахыг зөвшөөрч байна",key=f"confirm{rid}") and st.button("🗑 Устгах",key=f"delete{rid}"):
+        with get_engine().begin() as conn: conn.execute(delete(assets).where(assets.c.id==rid))
         st.rerun()
 
 
-def render_qr():
-    df = load_assets()
-    if df.empty:
-        st.info("QR код үүсгэхийн тулд эхлээд хөрөнгө бүртгэнэ үү.")
-        return
-
-    options = asset_options(df)
-    choice = st.selectbox("Хөрөнгө сонгох", list(options.keys()), key="qr_choice")
-    row = options[choice]
-
-    payload = asset_payload(row)
-    png = make_qr_png(payload)
-
-    col_img, col_info = st.columns([1, 2])
-    with col_img:
-        st.image(png, width=400)
-    with col_info:
-        st.text(
-            f"ID: {row['id']}\n"
-            f"Нэр: {row['name']}\n"
-            f"Байршил: {row['location']}\n"
-            f"Тоо: {row['quantity']}\n"
-            f"Төлөв: {row['status']}\n"
-            f"Бүртгэсэн: {row['registered_by'] or '—'}\n"
-            f"QR утга: {payload}"
-        )
-        st.download_button(
-            "⬇️ QR кодыг татах (PNG)",
-            data=png,
-            file_name=f"asset_{row['id']}_qr.png",
-            mime="image/png",
-        )
+def repairs_view(df, role):
+    if df.empty: st.info("Эхлээд тоног төхөөрөмж бүртгэнэ үү."); return
+    opts={f"#{r.id} — {r['name']}":int(r.id) for _,r in df.iterrows()}; choice=st.selectbox("Төхөөрөмж",list(opts),key="repair_asset"); aid=opts[choice]
+    with st.form("repair_form"):
+        issue=st.text_input("Гэмтэл / асуудал *"); rd=st.date_input("Засварт өгсөн огноо"); cost=st.number_input("Зардал (₮)",0.0,step=1000.0); status=st.selectbox("Засварын төлөв",["Хүлээгдэж буй","Засвартай","Дууссан"]); note=st.text_area("Тайлбар"); ok=st.form_submit_button("Засварын түүх нэмэх",type="primary")
+    if ok and issue.strip():
+        with get_engine().begin() as conn: conn.execute(insert(repairs).values(asset_id=aid,issue=issue.strip(),repair_date=str(rd),cost=cost,status=status,note=note.strip()))
+        st.success("Засварын түүх нэмэгдлээ.")
+    with get_engine().connect() as conn: history=pd.read_sql_query(select(repairs).where(repairs.c.asset_id==aid).order_by(repairs.c.id.desc()),conn)
+    if not history.empty: st.dataframe(history,hide_index=True,use_container_width=True)
 
 
-# ---------- Үндсэн интерфейс ----------
-role = require_login()
+def transfer_view(df, role):
+    if role not in ["admin","treasurer","teacher"]: st.info("Танд шилжүүлэг хийх эрх байхгүй."); return
+    if df.empty: st.info("Бүртгэл алга."); return
+    opts={f"#{r.id} — {r['name']} ({r['location']})":r for _,r in df.iterrows()}; choice=st.selectbox("Төхөөрөмж",list(opts),key="transfer_asset"); row=opts[choice]
+    with st.form("transfer_form"):
+        to=st.text_input("Шинэ байршил *"); td=st.date_input("Шилжүүлсэн огноо"); by=st.text_input("Шилжүүлсэн хүн"); note=st.text_area("Тайлбар"); ok=st.form_submit_button("Шилжүүлэг хадгалах",type="primary")
+    if ok and to.strip():
+        with get_engine().begin() as conn: conn.execute(insert(transfers).values(asset_id=int(row.id),from_location=row.location,to_location=to.strip(),transfer_date=str(td),transferred_by=by.strip(),note=note.strip())); conn.execute(update(assets).where(assets.c.id==int(row.id)).values(location=to.strip(),updated_at=datetime.now().strftime("%Y-%m-%d %H:%M")))
+        st.success("Байршил шинэчлэгдлээ."); st.rerun()
+    with get_engine().connect() as conn: history=pd.read_sql_query(select(transfers).where(transfers.c.asset_id==int(row.id)).order_by(transfers.c.id.desc()),conn)
+    if not history.empty: st.dataframe(history,hide_index=True,use_container_width=True)
 
-hero_logo, hero_text = st.columns([1, 9], vertical_alignment="center")
+
+def reports_view(df):
+    st.subheader("Тайлан татах")
+    c1,c2=st.columns(2)
+    with c1:
+        xlsx=io.BytesIO()
+        with pd.ExcelWriter(xlsx,engine="openpyxl") as writer: df.to_excel(writer,index=False,sheet_name="Тоног төхөөрөмж")
+        st.download_button("⬇ Excel татах",xlsx.getvalue(),"tonog_tuhuurumj.xlsx","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",use_container_width=True)
+    with c2:
+        st.download_button("⬇ CSV татах",df.to_csv(index=False).encode("utf-8-sig"),"tonog_tuhuurumj.csv","text/csv",use_container_width=True)
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.pdfgen import canvas
+        pdf=io.BytesIO(); p=canvas.Canvas(pdf,pagesize=A4); p.setFont("Helvetica-Bold",16); p.drawString(50,800,"ХААИС - Тоног төхөөрөмжийн тайлан"); p.setFont("Helvetica",10); y=775
+        for _,r in df.head(35).iterrows(): p.drawString(50,y,f"#{r.id} {r['name']} | {r['location']} | {r['status']} | тоо: {r['quantity']}"); y-=16
+        p.save(); st.download_button("⬇ PDF татах",pdf.getvalue(),"tonog_tuhuurumj.pdf","application/pdf",use_container_width=True)
+    except ImportError: st.info("PDF-д requirements.txt дотор reportlab нэмнэ үү.")
+
+
+def charts_view(df):
+    if df.empty: st.info("График харуулах өгөгдөл алга."); return
+    try:
+        import plotly.express as px
+        a,b=st.columns(2); a.plotly_chart(px.bar(df.groupby("status",as_index=False).quantity.sum(),x="status",y="quantity",color="status",title="Төлвөөр тоо ширхэг"),use_container_width=True); b.plotly_chart(px.bar(df.groupby("location",as_index=False).quantity.sum().sort_values("quantity",ascending=False).head(12),x="location",y="quantity",title="Байршлаар"),use_container_width=True)
+    except ImportError: st.info("Графикт requirements.txt дотор plotly нэмнэ үү.")
+
+
+role=require_login(); header(role); df=load_assets()
+hero_logo,hero_text=st.columns([1,9],vertical_alignment="center")
 with hero_logo:
-    if LOGO_PATH.exists():
-        st.image(str(LOGO_PATH), width=92)
-with hero_text:
-    st.markdown("""
-    <div class="hero"><div class="hero-kicker">ХААИС · School asset management</div><div class="hero-title">Тоног төхөөрөмжийн бүртгэл</div><p class="hero-subtitle">Сургуулийн хөрөнгийг нэг дороос бүртгэж, хянаж, QR кодоор таних систем</p></div>
-    """, unsafe_allow_html=True)
+    if LOGO_PATH.exists(): st.image(str(LOGO_PATH),width=88)
+with hero_text: st.markdown("<div class='hero'><div class='hero-kicker'>ХААИС · SCHOOL ASSET MANAGEMENT</div><div class='hero-title'>Тоног төхөөрөмжийн бүртгэл</div><p class='hero-subtitle'>Бүртгэл, тайлан, QR код, засвар ба шилжүүлгийн нэгдсэн систем</p></div>",unsafe_allow_html=True)
+overview(df)
 
-overview_df = load_assets()
-total_items = int(overview_df["quantity"].sum()) if not overview_df.empty else 0
-healthy = int((overview_df["status"] == "Хэвийн").sum()) if not overview_df.empty else 0
-needs_attention = int(overview_df["status"].isin(["Засвартай", "Эвдэрсэн"]).sum()) if not overview_df.empty else 0
-m1, m2, m3, m4 = st.columns(4)
-with m1: st.markdown(f'<div class="metric"><div class="metric-label">Нийт төрөл</div><div class="metric-value">{len(overview_df)}</div><div class="metric-note">бүртгэл</div></div>', unsafe_allow_html=True)
-with m2: st.markdown(f'<div class="metric"><div class="metric-label">Нийт тоо ширхэг</div><div class="metric-value">{total_items}</div><div class="metric-note">тоног төхөөрөмж</div></div>', unsafe_allow_html=True)
-with m3: st.markdown(f'<div class="metric"><div class="metric-label">Хэвийн төлөв</div><div class="metric-value">{healthy}</div><div class="metric-note">төрөл</div></div>', unsafe_allow_html=True)
-with m4: st.markdown(f'<div class="metric"><div class="metric-label">Анхаарах шаардлагатай</div><div class="metric-value">{needs_attention}</div><div class="metric-note">засвар / эвдрэл</div></div>', unsafe_allow_html=True)
-st.write("")
+if role == "admin": tabs=st.tabs(["➕ Бүртгэх","📋 Жагсаалт","✏️ Удирдах","🛠 Засвар","↔ Шилжүүлэг","📊 Dashboard","⬇ Тайлан","🔳 QR"])
+elif role in ["treasurer","teacher"]: tabs=st.tabs(["➕ Бүртгэх","📋 Жагсаалт","🛠 Засвар","↔ Шилжүүлэг","📊 Dashboard","⬇ Тайлан","🔳 QR"])
+else: tabs=st.tabs(["📋 Жагсаалт","📊 Dashboard","🔳 QR"])
 
-render_scanned_asset()
-
-if role == "admin":
-    tab_add, tab_list, tab_edit, tab_qr = st.tabs(
-        ["➕  Бүртгэх", "📋  Жагсаалт", "✏️  Удирдах", "🔳  QR код"]
-    )
-    with tab_add:
-        render_add()
-    with tab_list:
-        render_list()
-    with tab_edit:
-        render_edit()
-    with tab_qr:
-        render_qr()
-else:
-    tab_add, tab_list, tab_qr = st.tabs(["➕  Бүртгэх", "📋  Жагсаалт", "🔳  QR код"])
-    with tab_add:
-        render_add()
-    with tab_list:
-        render_list()
-    with tab_qr:
-        render_qr()
+idx=0
+if role in ["admin","treasurer","teacher"]:
+    with tabs[idx]: add_form(role)
+    idx+=1
+with tabs[idx]: list_view(df)
+idx+=1
+if role=="admin":
+    with tabs[idx]: edit_view(df,role)
+    idx+=1
+if role in ["admin","treasurer","teacher"]:
+    with tabs[idx]: repairs_view(df,role)
+    idx+=1
+    with tabs[idx]: transfer_view(df,role)
+    idx+=1
+with tabs[idx]: charts_view(df)
+idx+=1
+if role in ["admin","treasurer","teacher"]:
+    with tabs[idx]: reports_view(df)
+    idx+=1
+with tabs[idx]:
+    if df.empty: st.info("QR үүсгэхийн тулд эхлээд бүртгэл нэмнэ үү.")
+    else:
+        opts={f"#{r.id} — {r['name']} ({r['location']})":r for _,r in df.iterrows()}; choice=st.selectbox("Төхөөрөмж",list(opts),key="qr_asset"); row=opts[choice]; payload=app_url(row); png=qr_png(payload)
+        a,b=st.columns([1,2]); a.image(png,width=270); b.markdown(f"**{row['name']}**  \nID: #{row['id']}  \nБайршил: {row['location']}  \nТөлөв: {row['status']}"); b.download_button("⬇ QR татах",png,f"asset_{row['id']}_qr.png","image/png")
+        st.markdown("**Утсаар QR уншуулах**")
+        camera=st.camera_input("Камер нээх",key="qr_camera")
+        if camera:
+            try:
+                import cv2, numpy as np
+                value,_,_=cv2.QRCodeDetector().detectAndDecode(cv2.imdecode(np.frombuffer(camera.getvalue(),np.uint8),cv2.IMREAD_COLOR))
+                if value: st.success(f"QR холбоос: {value}")
+                else: st.warning("QR код танигдсангүй. Камераа ойртуулж дахин оролдоно уу.")
+            except ImportError: st.info("Camera QR уншигчийг ажиллуулахын тулд opencv-python-headless нэмнэ үү.")
