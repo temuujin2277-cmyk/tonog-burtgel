@@ -1,8 +1,9 @@
 """
-Сургуулийн тоног төхөөрөмж бүртгэх апп (v3)
+Сургуулийн тоног төхөөрөмж бүртгэх апп (v4)
 - Хоёр түвшний нууц үг:
-    APP_PASSWORD    -> Админ (бүртгэх, засах, устгах)
-    VIEWER_PASSWORD -> Үзэгч (зөвхөн жагсаалт харах, QR үүсгэх)
+    APP_PASSWORD    -> Админ (бүртгэх, засах, устгах, жагсаалт, QR)
+    VIEWER_PASSWORD -> Багш (бүртгэх, жагсаалт харах, QR үүсгэх; засах/устгах эрхгүй)
+- "Бүртгэсэн багшийн нэр" талбар (registered_by)
 - Өгөгдөл: Postgres (Supabase) -> st.secrets["DATABASE_URL"]
   DATABASE_URL байхгүй бол локал assets.db (SQLite) ашиглана.
 """
@@ -14,7 +15,7 @@ from datetime import datetime
 import pandas as pd
 import qrcode
 import streamlit as st
-from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, delete, insert, select, update
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, delete, insert, inspect, select, text, update
 
 STATUSES = ["Хэвийн", "Засвартай", "Эвдэрсэн", "Актласан"]
 
@@ -44,7 +45,7 @@ def require_login() -> str:
     role = st.session_state.get("role")
     if role:
         with st.sidebar:
-            st.caption("Эрх: " + ("Админ" if role == "admin" else "Үзэгч"))
+            st.caption("Эрх: " + ("Админ" if role == "admin" else "Багш"))
             if st.button("Гарах"):
                 st.session_state["role"] = None
                 st.rerun()
@@ -77,6 +78,7 @@ assets = Table(
     Column("quantity", Integer, nullable=False),
     Column("status", String(50), nullable=False),
     Column("created_at", String(30), nullable=False),
+    Column("registered_by", String(100), nullable=True),
 )
 
 
@@ -89,10 +91,15 @@ def get_engine():
         url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
     engine = create_engine(url, pool_pre_ping=True)
     metadata.create_all(engine)
+    # Хуучин хүснэгтэд registered_by багана байхгүй бол автоматаар нэмнэ
+    columns = [c["name"] for c in inspect(engine).get_columns("assets")]
+    if "registered_by" not in columns:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE assets ADD COLUMN registered_by VARCHAR(100)"))
     return engine
 
 
-def add_asset(name, location, quantity, status):
+def add_asset(name, location, quantity, status, registered_by):
     with get_engine().begin() as conn:
         conn.execute(
             insert(assets).values(
@@ -100,17 +107,24 @@ def add_asset(name, location, quantity, status):
                 location=location,
                 quantity=quantity,
                 status=status,
+                registered_by=registered_by,
                 created_at=datetime.now().strftime("%Y-%m-%d %H:%M"),
             )
         )
 
 
-def update_asset(asset_id, name, location, quantity, status):
+def update_asset(asset_id, name, location, quantity, status, registered_by):
     with get_engine().begin() as conn:
         conn.execute(
             update(assets)
             .where(assets.c.id == asset_id)
-            .values(name=name, location=location, quantity=quantity, status=status)
+            .values(
+                name=name,
+                location=location,
+                quantity=quantity,
+                status=status,
+                registered_by=registered_by,
+            )
         )
 
 
@@ -121,17 +135,19 @@ def delete_asset(asset_id):
 
 def load_assets() -> pd.DataFrame:
     with get_engine().connect() as conn:
-        return pd.read_sql_query(select(assets).order_by(assets.c.id.desc()), conn)
+        df = pd.read_sql_query(select(assets).order_by(assets.c.id.desc()), conn)
+    df["registered_by"] = df["registered_by"].fillna("")
+    return df
 
 
 # ---------- QR код ----------
-def make_qr_png(text: str) -> bytes:
+def make_qr_png(text_value: str) -> bytes:
     qr = qrcode.QRCode(
         box_size=12,
         border=4,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
     )
-    qr.add_data(text)
+    qr.add_data(text_value)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
     buf = io.BytesIO()
@@ -149,6 +165,9 @@ def asset_options(df):
 
 # ---------- Табууд ----------
 def render_add():
+    registrant = st.text_input(
+        "Бүртгэсэн багшийн нэр", key="registrant", placeholder="Жишээ: Б. Болд"
+    )
     with st.form("add_form", clear_on_submit=True):
         name = st.text_input("Хөрөнгийн нэр", placeholder="Жишээ: Проектор")
         location = st.text_input("Анги / байршил", placeholder="Жишээ: 12а анги, 204 тоот")
@@ -157,10 +176,12 @@ def render_add():
         submitted = st.form_submit_button("Бүртгэх")
 
     if submitted:
-        if not name.strip() or not location.strip():
+        if not registrant.strip():
+            st.error("Дээд талын «Бүртгэсэн багшийн нэр» талбарыг бөглөнө үү.")
+        elif not name.strip() or not location.strip():
             st.error("Нэр болон байршлыг заавал бөглөнө үү.")
         else:
-            add_asset(name.strip(), location.strip(), int(quantity), status)
+            add_asset(name.strip(), location.strip(), int(quantity), status, registrant.strip())
             st.success(f"✅ «{name.strip()}» амжилттай бүртгэгдлээ.")
 
 
@@ -171,14 +192,16 @@ def render_list():
         return
 
     c1, c2 = st.columns(2)
-    search = c1.text_input("🔍 Нэр / байршлаар хайх")
+    search = c1.text_input("🔍 Нэр / байршил / багшаар хайх")
     status_filter = c2.multiselect("Төлвөөр шүүх", STATUSES)
 
     view = df
     if search:
-        mask = view["name"].str.contains(search, case=False, na=False) | view[
-            "location"
-        ].str.contains(search, case=False, na=False)
+        mask = (
+            view["name"].str.contains(search, case=False, na=False)
+            | view["location"].str.contains(search, case=False, na=False)
+            | view["registered_by"].str.contains(search, case=False, na=False)
+        )
         view = view[mask]
     if status_filter:
         view = view[view["status"].isin(status_filter)]
@@ -192,6 +215,7 @@ def render_list():
                 "quantity": "Тоо",
                 "status": "Төлөв",
                 "created_at": "Бүртгэсэн огноо",
+                "registered_by": "Бүртгэсэн багш",
             }
         ),
         hide_index=True,
@@ -222,13 +246,16 @@ def render_edit():
         )
         idx = STATUSES.index(row["status"]) if row["status"] in STATUSES else 0
         e_status = st.selectbox("Төлөв", STATUSES, index=idx, key=f"e_status_{rid}")
+        e_by = st.text_input(
+            "Бүртгэсэн багшийн нэр", value=row["registered_by"], key=f"e_by_{rid}"
+        )
         save = st.form_submit_button("💾 Хадгалах")
 
     if save:
         if not e_name.strip() or not e_loc.strip():
             st.error("Нэр болон байршлыг заавал бөглөнө үү.")
         else:
-            update_asset(rid, e_name.strip(), e_loc.strip(), int(e_qty), e_status)
+            update_asset(rid, e_name.strip(), e_loc.strip(), int(e_qty), e_status, e_by.strip())
             st.session_state["flash"] = f"✅ #{rid} амжилттай шинэчлэгдлээ."
             st.rerun()
 
@@ -264,6 +291,7 @@ def render_qr():
             f"Байршил: {row['location']}\n"
             f"Тоо: {row['quantity']}\n"
             f"Төлөв: {row['status']}\n"
+            f"Бүртгэсэн: {row['registered_by'] or '—'}\n"
             f"QR утга: {payload}"
         )
         st.download_button(
@@ -292,7 +320,9 @@ if role == "admin":
     with tab_qr:
         render_qr()
 else:
-    tab_list, tab_qr = st.tabs(["📋 Жагсаалт", "🔳 QR код"])
+    tab_add, tab_list, tab_qr = st.tabs(["➕ Шинээр бүртгэх", "📋 Жагсаалт", "🔳 QR код"])
+    with tab_add:
+        render_add()
     with tab_list:
         render_list()
     with tab_qr:
