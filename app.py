@@ -71,15 +71,13 @@ assets = Table(
 @st.cache_resource
 def get_engine():
     url = secret("DATABASE_URL", "sqlite:///assets.db")
-       if url.startswith("postgres://"):
-          url = url.replace("postgres://", "postgresql://", 1)
-       if url.startswith("postgresql://"):
-          url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
-       engine = create_engine(url, pool_pre_ping=True)
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
+    engine = create_engine(url, pool_pre_ping=True)
     metadata.create_all(engine)  # хүснэгт байхгүй бол үүсгэнэ
     return engine
-
-
 def add_asset(name, location, quantity, status):
     with get_engine().begin() as conn:
         conn.execute(
