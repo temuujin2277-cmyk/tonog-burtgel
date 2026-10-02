@@ -1,3 +1,5 @@
    streamlit
    pandas
    qrcode[pil]
+   sqlalchemy
+   psycopg2-binary
