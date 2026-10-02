@@ -140,6 +140,12 @@ def load_assets() -> pd.DataFrame:
     return df
 
 
+def get_asset(asset_id):
+    with get_engine().connect() as conn:
+        r = conn.execute(select(assets).where(assets.c.id == asset_id)).mappings().first()
+    return dict(r) if r else None
+
+
 # ---------- QR код ----------
 def make_qr_png(text_value: str) -> bytes:
     qr = qrcode.QRCode(
@@ -155,12 +161,49 @@ def make_qr_png(text_value: str) -> bytes:
     return buf.getvalue()
 
 
+APP_URL_DEFAULT = "https://tonog-burtgel-9kpnaomprgjcdxjgbkhvc5.streamlit.app"
+
+
 def asset_payload(row) -> str:
-    return f"ASSET-{row['id']}"
+    base = str(secret("APP_URL", APP_URL_DEFAULT)).rstrip("/")
+    return f"{base}/?id={row['id']}"
 
 
 def asset_options(df):
     return {f"#{r['id']} — {r['name']} ({r['location']})": r for _, r in df.iterrows()}
+
+
+# ---------- QR-аар нээгдсэн хөрөнгийн карт ----------
+def render_scanned_asset():
+    raw = st.query_params.get("id")
+    if not raw:
+        return
+    try:
+        asset_id = int(raw)
+    except (TypeError, ValueError):
+        st.warning("QR кодын дугаар буруу байна.")
+        return
+
+    row = get_asset(asset_id)
+    with st.container(border=True):
+        if row is None:
+            st.warning(f"#{asset_id} дугаартай хөрөнгө олдсонгүй.")
+        else:
+            st.subheader(f"🔎 {row['name']}")
+            c1, c2 = st.columns(2)
+            c1.markdown(
+                f"**ID:** {row['id']}  \n"
+                f"**Анги / байршил:** {row['location']}  \n"
+                f"**Тоо ширхэг:** {row['quantity']}"
+            )
+            c2.markdown(
+                f"**Төлөв:** {row['status']}  \n"
+                f"**Бүртгэсэн багш:** {row['registered_by'] or '—'}  \n"
+                f"**Бүртгэсэн огноо:** {row['created_at']}"
+            )
+        if st.button("✖ Хаах", key="close_scan"):
+            st.query_params.clear()
+            st.rerun()
 
 
 # ---------- Табууд ----------
@@ -306,6 +349,8 @@ def render_qr():
 role = require_login()
 
 st.title("🏫 Сургуулийн тоног төхөөрөмжийн бүртгэл")
+
+render_scanned_asset()
 
 if role == "admin":
     tab_add, tab_list, tab_edit, tab_qr = st.tabs(
