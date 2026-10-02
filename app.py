@@ -11,6 +11,7 @@
 import hmac
 import io
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
 import qrcode
@@ -20,6 +21,8 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, 
 STATUSES = ["Хэвийн", "Засвартай", "Эвдэрсэн", "Актласан"]
 
 st.set_page_config(page_title="Тоног төхөөрөмжийн бүртгэл", page_icon="🏫", layout="wide", initial_sidebar_state="expanded")
+
+LOGO_PATH = Path(__file__).parent / "assets" / "HAAIS.png"
 
 st.markdown("""
 <style>
@@ -58,6 +61,9 @@ def require_login() -> str:
     role = st.session_state.get("role")
     if role:
         with st.sidebar:
+            if LOGO_PATH.exists():
+                st.image(str(LOGO_PATH), width=90)
+            st.markdown("**ХААИС**  \nТоног төхөөрөмжийн систем")
             st.caption("Эрх: " + ("Админ" if role == "admin" else "Багш"))
             if st.button("Гарах"):
                 st.session_state["role"] = None
@@ -368,9 +374,14 @@ def render_qr():
 # ---------- Үндсэн интерфейс ----------
 role = require_login()
 
-st.markdown("""
-<div class="hero"><div class="hero-kicker">School asset management</div><div class="hero-title">🏫 Тоног төхөөрөмжийн бүртгэл</div><p class="hero-subtitle">Сургуулийн хөрөнгийг нэг дороос бүртгэж, хянаж, QR кодоор таних систем</p></div>
-""", unsafe_allow_html=True)
+hero_logo, hero_text = st.columns([1, 9], vertical_alignment="center")
+with hero_logo:
+    if LOGO_PATH.exists():
+        st.image(str(LOGO_PATH), width=92)
+with hero_text:
+    st.markdown("""
+    <div class="hero"><div class="hero-kicker">ХААИС · School asset management</div><div class="hero-title">Тоног төхөөрөмжийн бүртгэл</div><p class="hero-subtitle">Сургуулийн хөрөнгийг нэг дороос бүртгэж, хянаж, QR кодоор таних систем</p></div>
+    """, unsafe_allow_html=True)
 
 overview_df = load_assets()
 total_items = int(overview_df["quantity"].sum()) if not overview_df.empty else 0
