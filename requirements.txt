@@ -1,5 +1,10 @@
-   streamlit
-   pandas
-   qrcode[pil]
-   sqlalchemy
-   psycopg2-binary
+streamlit
+pandas
+qrcode[pil]
+sqlalchemy
+psycopg2-binary
+plotly
+openpyxl
+reportlab
+opencv-python-headless
+supabase
