@@ -19,7 +19,20 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, 
 
 STATUSES = ["Хэвийн", "Засвартай", "Эвдэрсэн", "Актласан"]
 
-st.set_page_config(page_title="Хөрөнгө бүртгэл", page_icon="🏫", layout="wide")
+st.set_page_config(page_title="Тоног төхөөрөмжийн бүртгэл", page_icon="🏫", layout="wide", initial_sidebar_state="expanded")
+
+st.markdown("""
+<style>
+[data-testid="stAppViewContainer"]{background:radial-gradient(circle at 10% 0%,#20233a 0,#0d0f16 42%,#0b0c11 100%)}
+[data-testid="stHeader"]{background:transparent}[data-testid="stSidebar"]{background:rgba(18,20,30,.92);border-right:1px solid rgba(139,92,246,.18)}
+.block-container{max-width:1220px;padding-top:2.5rem;padding-bottom:4rem} h1{letter-spacing:-.035em;font-weight:800!important}
+[data-testid="stForm"]{background:rgba(23,25,35,.82);border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:1.35rem}
+.hero{padding:1.4rem 1.55rem;border:1px solid rgba(139,92,246,.26);border-radius:20px;background:linear-gradient(120deg,rgba(124,58,237,.22),rgba(6,182,212,.08));margin-bottom:1.25rem}
+.hero-kicker{color:#a78bfa;text-transform:uppercase;letter-spacing:.14em;font-size:.72rem;font-weight:700}.hero-title{font-size:2.2rem;line-height:1.1;font-weight:800;margin:.35rem 0}.hero-subtitle{color:#aeb5c7;margin:0}
+.metric{background:linear-gradient(145deg,rgba(31,34,48,.96),rgba(20,22,31,.92));border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:1rem 1.1rem;min-height:104px}.metric-label{color:#9ca3b8;font-size:.78rem;text-transform:uppercase;letter-spacing:.07em}.metric-value{color:#f8fafc;font-size:1.75rem;font-weight:800;margin-top:.4rem}.metric-note{color:#8b5cf6;font-size:.78rem;margin-top:.1rem}.section-label{color:#aeb5c7;font-size:.82rem;font-weight:700;text-transform:uppercase;letter-spacing:.09em;margin:1.1rem 0 .55rem}
+button[kind="primary"]{background:linear-gradient(135deg,#8b5cf6,#6366f1)!important;border:0!important}[data-testid="stDataFrame"]{border-radius:14px;overflow:hidden;border:1px solid rgba(148,163,184,.14)}.stTabs [data-baseweb="tab-list"]{gap:8px;border-bottom:1px solid rgba(148,163,184,.14)}.stTabs [data-baseweb="tab"]{padding:.7rem 1rem}@media(max-width:700px){.hero-title{font-size:1.65rem}.block-container{padding:1rem}}
+</style>
+""", unsafe_allow_html=True)
 
 
 # ---------- Secrets ----------
@@ -211,12 +224,19 @@ def render_add():
     registrant = st.text_input(
         "Бүртгэсэн багшийн нэр", key="registrant", placeholder="Жишээ: Б. Болд"
     )
+    st.markdown('<div class="section-label">Шинэ хөрөнгө оруулах</div>', unsafe_allow_html=True)
     with st.form("add_form", clear_on_submit=True):
-        name = st.text_input("Хөрөнгийн нэр", placeholder="Жишээ: Проектор")
-        location = st.text_input("Анги / байршил", placeholder="Жишээ: 12а анги, 204 тоот")
-        quantity = st.number_input("Тоо ширхэг", min_value=1, value=1, step=1)
-        status = st.selectbox("Төлөв", STATUSES)
-        submitted = st.form_submit_button("Бүртгэх")
+        c1, c2 = st.columns(2)
+        with c1:
+            name = st.text_input("Хөрөнгийн нэр", placeholder="Жишээ: Проектор")
+        with c2:
+            location = st.text_input("Анги / байршил", placeholder="Жишээ: 12а анги, 204 тоот")
+        c3, c4 = st.columns(2)
+        with c3:
+            quantity = st.number_input("Тоо ширхэг", min_value=1, value=1, step=1)
+        with c4:
+            status = st.selectbox("Төлөв", STATUSES)
+        submitted = st.form_submit_button("＋  Бүртгэх", type="primary", use_container_width=True)
 
     if submitted:
         if not registrant.strip():
@@ -348,13 +368,26 @@ def render_qr():
 # ---------- Үндсэн интерфейс ----------
 role = require_login()
 
-st.title("🏫 Сургуулийн тоног төхөөрөмжийн бүртгэл")
+st.markdown("""
+<div class="hero"><div class="hero-kicker">School asset management</div><div class="hero-title">🏫 Тоног төхөөрөмжийн бүртгэл</div><p class="hero-subtitle">Сургуулийн хөрөнгийг нэг дороос бүртгэж, хянаж, QR кодоор таних систем</p></div>
+""", unsafe_allow_html=True)
+
+overview_df = load_assets()
+total_items = int(overview_df["quantity"].sum()) if not overview_df.empty else 0
+healthy = int((overview_df["status"] == "Хэвийн").sum()) if not overview_df.empty else 0
+needs_attention = int(overview_df["status"].isin(["Засвартай", "Эвдэрсэн"]).sum()) if not overview_df.empty else 0
+m1, m2, m3, m4 = st.columns(4)
+with m1: st.markdown(f'<div class="metric"><div class="metric-label">Нийт төрөл</div><div class="metric-value">{len(overview_df)}</div><div class="metric-note">бүртгэл</div></div>', unsafe_allow_html=True)
+with m2: st.markdown(f'<div class="metric"><div class="metric-label">Нийт тоо ширхэг</div><div class="metric-value">{total_items}</div><div class="metric-note">тоног төхөөрөмж</div></div>', unsafe_allow_html=True)
+with m3: st.markdown(f'<div class="metric"><div class="metric-label">Хэвийн төлөв</div><div class="metric-value">{healthy}</div><div class="metric-note">төрөл</div></div>', unsafe_allow_html=True)
+with m4: st.markdown(f'<div class="metric"><div class="metric-label">Анхаарах шаардлагатай</div><div class="metric-value">{needs_attention}</div><div class="metric-note">засвар / эвдрэл</div></div>', unsafe_allow_html=True)
+st.write("")
 
 render_scanned_asset()
 
 if role == "admin":
     tab_add, tab_list, tab_edit, tab_qr = st.tabs(
-        ["➕ Шинээр бүртгэх", "📋 Жагсаалт", "✏️ Засах / устгах", "🔳 QR код"]
+        ["➕  Бүртгэх", "📋  Жагсаалт", "✏️  Удирдах", "🔳  QR код"]
     )
     with tab_add:
         render_add()
@@ -365,7 +398,7 @@ if role == "admin":
     with tab_qr:
         render_qr()
 else:
-    tab_add, tab_list, tab_qr = st.tabs(["➕ Шинээр бүртгэх", "📋 Жагсаалт", "🔳 QR код"])
+    tab_add, tab_list, tab_qr = st.tabs(["➕  Бүртгэх", "📋  Жагсаалт", "🔳  QR код"])
     with tab_add:
         render_add()
     with tab_list:
