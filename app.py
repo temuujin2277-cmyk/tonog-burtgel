@@ -51,7 +51,7 @@ def load_assets() -> pd.DataFrame:
 
 # ---------- QR код ----------
 def make_qr_png(text: str) -> bytes:
-    qr = qrcode.QRCode(box_size=10, border=2)
+    qr = qrcode.QRCode(box_size=12, border=4, error_correction=qrcode.constants.ERROR_CORRECT_L)
     qr.add_data(text)
     qr.make(fit=True)
     img = qr.make_image(fill_color="black", back_color="white")
@@ -61,14 +61,7 @@ def make_qr_png(text: str) -> bytes:
 
 
 def asset_payload(row) -> str:
-    return (
-        f"ID: {row['id']}\n"
-        f"Нэр: {row['name']}\n"
-        f"Байршил: {row['location']}\n"
-        f"Тоо: {row['quantity']}\n"
-        f"Төлөв: {row['status']}"
-    )
-
+    return f"ID:{row['id']} {row['name']} | {row['location']} | {row['quantity']}ш | {row['status']}"
 
 # ---------- Интерфейс ----------
 st.set_page_config(page_title="Хөрөнгө бүртгэл", page_icon="🏫", layout="wide")
@@ -146,7 +139,7 @@ with tab_qr:
 
         col_img, col_info = st.columns([1, 2])
         with col_img:
-            st.image(png, width=260)
+            st.image(png, width=400)
         with col_info:
             st.text(payload)
             st.download_button(
