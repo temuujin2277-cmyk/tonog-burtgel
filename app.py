@@ -19,10 +19,15 @@ ROLES = ["admin", "treasurer", "teacher", "viewer"]
 
 st.markdown("""
 <style>
-[data-testid="stAppViewContainer"]{background:radial-gradient(circle at 10% 0%,#20233a 0,#0d0f16 42%,#0b0c11 100%)}
-[data-testid="stHeader"]{background:transparent}[data-testid="stSidebar"]{background:rgba(18,20,30,.94);border-right:1px solid rgba(139,92,246,.2)}
-.block-container{max-width:1280px;padding-top:1.8rem;padding-bottom:4rem}.hero{padding:1.35rem 1.5rem;border:1px solid rgba(139,92,246,.3);border-radius:20px;background:linear-gradient(120deg,rgba(124,58,237,.22),rgba(6,182,212,.08));margin-bottom:1.2rem}
-.hero-kicker,.section-label{color:#a78bfa;text-transform:uppercase;letter-spacing:.12em;font-size:.72rem;font-weight:700}.hero-title{font-size:2.15rem;font-weight:800;margin:.3rem 0}.hero-subtitle{color:#aeb5c7;margin:0}.metric{background:linear-gradient(145deg,rgba(31,34,48,.96),rgba(20,22,31,.92));border:1px solid rgba(148,163,184,.14);border-radius:16px;padding:1rem;min-height:100px}.metric-label{color:#9ca3b8;font-size:.75rem;text-transform:uppercase}.metric-value{color:#f8fafc;font-size:1.7rem;font-weight:800;margin-top:.35rem}.metric-note{color:#8b5cf6;font-size:.76rem}[data-testid="stForm"]{background:rgba(23,25,35,.82);border:1px solid rgba(148,163,184,.16);border-radius:16px;padding:1.15rem}.stTabs [data-baseweb="tab-list"]{gap:8px;border-bottom:1px solid rgba(148,163,184,.14)}button[kind="primary"]{background:linear-gradient(135deg,#8b5cf6,#6366f1)!important;border:0!important}@media(max-width:700px){.hero-title{font-size:1.6rem}.block-container{padding:1rem}}
+:root{--green:#0b6b43;--green2:#138a58;--gold:#e7bd32;--ink:#17221d;--muted:#66756d;--bg:#f4f7f4;--card:#ffffff}
+[data-testid="stAppViewContainer"]{background:var(--bg)} [data-testid="stHeader"]{background:transparent}
+[data-testid="stSidebar"]{background:linear-gradient(180deg,#073f2b 0%,#0b6b43 58%,#075438 100%);border-right:0}
+[data-testid="stSidebar"] *{color:#eef8f2!important}.block-container{max-width:1400px;padding:2rem 2.7rem 4rem}
+.hero{padding:1.4rem 1.65rem;border:1px solid #dfe9e1;border-radius:22px;background:linear-gradient(120deg,#fff 0%,#f1f8f2 100%);box-shadow:0 10px 30px rgba(26,64,42,.06);margin-bottom:1.2rem}.hero-kicker,.section-label{color:var(--green);text-transform:uppercase;letter-spacing:.13em;font-size:.7rem;font-weight:800}.hero-title{color:var(--ink);font-size:2.1rem;font-weight:850;margin:.3rem 0}.hero-subtitle{color:var(--muted);margin:0}
+.metric{background:var(--card);border:1px solid #e1ebe3;border-radius:18px;padding:1.15rem 1.2rem;min-height:108px;box-shadow:0 8px 22px rgba(26,64,42,.055)}.metric-label{color:#718078;font-size:.72rem;text-transform:uppercase;letter-spacing:.06em;font-weight:700}.metric-value{color:var(--green);font-size:1.8rem;font-weight:850;margin-top:.35rem}.metric-note{color:#ad8c13;font-size:.76rem;font-weight:650}
+[data-testid="stForm"]{background:var(--card);border:1px solid #e1ebe3;border-radius:18px;padding:1.25rem;box-shadow:0 8px 22px rgba(26,64,42,.045)} [data-testid="stTextInput"] input,[data-testid="stNumberInput"] input{border-radius:10px!important;background:#fbfdfb!important;border-color:#d8e5da!important}[data-testid="stDataFrame"]{border-radius:16px;overflow:hidden;border:1px solid #dce8de}
+button[kind="primary"]{background:linear-gradient(135deg,var(--green2),var(--green))!important;border:0!important} .stButton>button{border-radius:10px}.nav-title{font-size:1.1rem;font-weight:800;letter-spacing:-.02em}.nav-caption{font-size:.72rem;opacity:.78;margin-bottom:1.2rem}.page-title{color:var(--ink);font-size:1.65rem;font-weight:850;margin:.2rem 0 .25rem}.page-caption{color:var(--muted);margin-bottom:1.25rem}.stRadio>div{gap:.28rem}.stRadio label{padding:.55rem .7rem;border-radius:9px}.stRadio label:hover{background:rgba(255,255,255,.12)}
+@media(max-width:700px){.hero-title{font-size:1.55rem}.block-container{padding:1rem}.metric{min-height:92px}.metric-value{font-size:1.45rem}}
 </style>
 """, unsafe_allow_html=True)
 
@@ -242,42 +247,67 @@ def charts_view(df):
     except ImportError: st.info("Графикт requirements.txt дотор plotly нэмнэ үү.")
 
 
-role=require_login(); header(role); df=load_assets()
-hero_logo,hero_text=st.columns([1,9],vertical_alignment="center")
-with hero_logo:
-    if LOGO_PATH.exists(): st.image(str(LOGO_PATH),width=88)
-with hero_text: st.markdown("<div class='hero'><div class='hero-kicker'>ХААИС · SCHOOL ASSET MANAGEMENT</div><div class='hero-title'>Тоног төхөөрөмжийн бүртгэл</div><p class='hero-subtitle'>Бүртгэл, тайлан, QR код, засвар ба шилжүүлгийн нэгдсэн систем</p></div>",unsafe_allow_html=True)
-overview(df)
+role = require_login()
+df = load_assets()
 
-if role == "admin": tabs=st.tabs(["➕ Бүртгэх","📋 Жагсаалт","✏️ Удирдах","🛠 Засвар","↔ Шилжүүлэг","📊 Dashboard","⬇ Тайлан","🔳 QR"])
-elif role in ["treasurer","teacher"]: tabs=st.tabs(["➕ Бүртгэх","📋 Жагсаалт","🛠 Засвар","↔ Шилжүүлэг","📊 Dashboard","⬇ Тайлан","🔳 QR"])
-else: tabs=st.tabs(["📋 Жагсаалт","📊 Dashboard","🔳 QR"])
+# Sidebar navigation — өгөгдлийн логик өөрчлөгдөөгүй, зөвхөн UI-ийн navigation.
+with st.sidebar:
+    st.markdown('<div class="nav-title">◈  ХААИС</div><div class="nav-caption">Тоног төхөөрөмжийн систем</div>', unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown('<div class="nav-caption">ҮНДСЭН ЦЭС</div>', unsafe_allow_html=True)
+    if role == "admin":
+        pages = ["⌂  Dashboard", "＋  Бүртгэх", "▦  Тоног төхөөрөмж", "✎  Удирдах", "⚒  Засвар", "↔  Шилжүүлэг", "▣  QR төв", "⇩  Тайлан"]
+    elif role in ["treasurer", "teacher"]:
+        pages = ["⌂  Dashboard", "＋  Бүртгэх", "▦  Тоног төхөөрөмж", "⚒  Засвар", "↔  Шилжүүлэг", "▣  QR төв", "⇩  Тайлан"]
+    else:
+        pages = ["⌂  Dashboard", "▦  Тоног төхөөрөмж", "▣  QR төв"]
+    page = st.radio("Цэс", pages, label_visibility="collapsed", key="main_nav")
+    st.markdown("---")
+    st.caption(f"Нэвтэрсэн эрх: {role.upper()}")
+    if st.button("⎋  Гарах", use_container_width=True):
+        st.session_state.clear(); st.rerun()
 
-idx=0
-if role in ["admin","treasurer","teacher"]:
-    with tabs[idx]: add_form(role)
-    idx+=1
-with tabs[idx]: list_view(df)
-idx+=1
-if role=="admin":
-    with tabs[idx]: edit_view(df,role)
-    idx+=1
-if role in ["admin","treasurer","teacher"]:
-    with tabs[idx]: repairs_view(df,role)
-    idx+=1
-    with tabs[idx]: transfer_view(df,role)
-    idx+=1
-with tabs[idx]: charts_view(df)
-idx+=1
-if role in ["admin","treasurer","teacher"]:
-    with tabs[idx]: reports_view(df)
-    idx+=1
-with tabs[idx]:
+# Top bar and brand header.
+top_left, top_right = st.columns([7, 1])
+with top_left:
+    st.markdown('<div class="page-title">Тоног төхөөрөмжийн бүртгэл</div><div class="page-caption">ХААИС-ийн хөрөнгө удирдлагын нэгдсэн систем</div>', unsafe_allow_html=True)
+with top_right:
+    if LOGO_PATH.exists(): st.image(str(LOGO_PATH), width=58)
+
+if page == "⌂  Dashboard":
+    st.markdown('<div class="hero"><div class="hero-kicker">School asset management</div><div class="hero-title">Сайн байна уу, системийн хэрэглэгч</div><p class="hero-subtitle">Өнөөдрийн тоног төхөөрөмжийн бүртгэл, төлөв, үйл ажиллагааг нэг дороос хянаарай.</p></div>', unsafe_allow_html=True)
+    overview(df)
+    st.markdown("### Төлөвийн тойм")
+    charts_view(df)
+    if not df.empty:
+        st.markdown("### Сүүлийн бүртгэлүүд")
+        recent = df.head(5)[["id","name","location","status","quantity","updated_at"]].rename(columns={"id":"ID","name":"Нэр","location":"Байршил","status":"Төлөв","quantity":"Тоо","updated_at":"Шинэчилсэн"})
+        st.dataframe(recent, hide_index=True, use_container_width=True)
+elif page == "＋  Бүртгэх":
+    st.markdown('<div class="hero"><div class="hero-kicker">Asset registration</div><div class="hero-title">Шинэ тоног төхөөрөмж бүртгэх</div><p class="hero-subtitle">Шаардлагатай мэдээллийг бөглөж, зургийг хавсаргана уу.</p></div>', unsafe_allow_html=True)
+    add_form(role)
+elif page == "▦  Тоног төхөөрөмж":
+    st.markdown('<div class="hero"><div class="hero-kicker">Inventory</div><div class="hero-title">Тоног төхөөрөмжийн жагсаалт</div><p class="hero-subtitle">Хайх, шүүх, бүртгэлүүдээ хянах.</p></div>', unsafe_allow_html=True)
+    list_view(df)
+elif page == "✎  Удирдах":
+    st.markdown('<div class="hero"><div class="hero-kicker">Manage assets</div><div class="hero-title">Бүртгэл удирдах</div><p class="hero-subtitle">Мэдээлэл засах эсвэл хуучирсан бүртгэлийг устгах.</p></div>', unsafe_allow_html=True)
+    edit_view(df, role)
+elif page == "⚒  Засвар":
+    st.markdown('<div class="hero"><div class="hero-kicker">Maintenance</div><div class="hero-title">Засвар үйлчилгээ</div><p class="hero-subtitle">Засварын түүх болон зардлыг бүртгэх.</p></div>', unsafe_allow_html=True)
+    repairs_view(df, role)
+elif page == "↔  Шилжүүлэг":
+    st.markdown('<div class="hero"><div class="hero-kicker">Transfers</div><div class="hero-title">Байршил шилжүүлэг</div><p class="hero-subtitle">Төхөөрөмжийн одоогийн байршил болон шилжилтийн түүх.</p></div>', unsafe_allow_html=True)
+    transfer_view(df, role)
+elif page == "⇩  Тайлан":
+    st.markdown('<div class="hero"><div class="hero-kicker">Reports</div><div class="hero-title">Тайлан татах</div><p class="hero-subtitle">Бүртгэлийн өгөгдлийг Excel, CSV эсвэл PDF хэлбэрээр татах.</p></div>', unsafe_allow_html=True)
+    reports_view(df)
+elif page == "▣  QR төв":
+    st.markdown('<div class="hero"><div class="hero-kicker">QR center</div><div class="hero-title">QR кодын төв</div><p class="hero-subtitle">Төхөөрөмжийн шошго үүсгэх, татах, камераар шалгах.</p></div>', unsafe_allow_html=True)
     if df.empty: st.info("QR үүсгэхийн тулд эхлээд бүртгэл нэмнэ үү.")
     else:
-        opts={f"#{r.id} — {r['name']} ({r['location']})":r for _,r in df.iterrows()}; choice=st.selectbox("Төхөөрөмж",list(opts),key="qr_asset"); row=opts[choice]; payload=app_url(row); png=qr_png(payload)
-        a,b=st.columns([1,2]); a.image(png,width=270); b.markdown(f"**{row['name']}**  \nID: #{row['id']}  \nБайршил: {row['location']}  \nТөлөв: {row['status']}"); b.download_button("⬇ QR татах",png,f"asset_{row['id']}_qr.png","image/png")
-        st.markdown("**Утсаар QR уншуулах**")
+        opts={f"#{r.id} — {r['name']} ({r['location']})":r for _,r in df.iterrows()}; choice=st.selectbox("Төхөөрөмж сонгох",list(opts),key="qr_asset"); row=opts[choice]; payload=app_url(row); png=qr_png(payload)
+        a,b=st.columns([1,2]); a.image(png,width=270); b.markdown(f"### {row['name']}\n\n**ID:** #{row['id']}  \n**Байршил:** {row['location']}  \n**Төлөв:** {row['status']}"); b.download_button("⬇ QR татах",png,f"asset_{row['id']}_qr.png","image/png",use_container_width=True)
+        st.markdown("### Камераар шалгах")
         camera=st.camera_input("Камер нээх",key="qr_camera")
         if camera:
             try:
@@ -285,4 +315,4 @@ with tabs[idx]:
                 value,_,_=cv2.QRCodeDetector().detectAndDecode(cv2.imdecode(np.frombuffer(camera.getvalue(),np.uint8),cv2.IMREAD_COLOR))
                 if value: st.success(f"QR холбоос: {value}")
                 else: st.warning("QR код танигдсангүй. Камераа ойртуулж дахин оролдоно уу.")
-            except ImportError: st.info("Camera QR уншигчийг ажиллуулахын тулд opencv-python-headless нэмнэ үү.")
+            except ImportError: st.info("QR camera-д opencv-python-headless шаардлагатай.")
