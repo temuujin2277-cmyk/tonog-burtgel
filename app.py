@@ -22,7 +22,8 @@ st.markdown("""
 :root{--green:#0b6b43;--green2:#138a58;--gold:#e7bd32;--ink:#17221d;--muted:#66756d;--bg:#f4f7f4;--card:#ffffff}
 [data-testid="stAppViewContainer"]{background:var(--bg)} [data-testid="stHeader"]{background:transparent}
 /* Streamlit branding болон дээд toolbar-ийг нуух */
-footer{visibility:hidden} [data-testid="stToolbar"]{visibility:hidden} [data-testid="stDecoration"]{visibility:hidden}
+footer, footer *{display:none!important;visibility:hidden!important;height:0!important;min-height:0!important}
+#MainMenu, header, [data-testid="stToolbar"], [data-testid="stDecoration"], [data-testid="stStatusWidget"]{display:none!important;visibility:hidden!important}
 [data-testid="stSidebar"]{background:linear-gradient(180deg,#073f2b 0%,#0b6b43 58%,#075438 100%);border-right:0}
 [data-testid="stSidebar"] *{color:#eef8f2!important}.block-container{max-width:1400px;padding:2rem 2.7rem 4rem}
 .hero{padding:1.4rem 1.65rem;border:1px solid #dfe9e1;border-radius:22px;background:linear-gradient(120deg,#fff 0%,#f1f8f2 100%);box-shadow:0 10px 30px rgba(26,64,42,.06);margin-bottom:1.2rem}.hero-kicker,.section-label{color:var(--green);text-transform:uppercase;letter-spacing:.13em;font-size:.7rem;font-weight:800}.hero-title{color:var(--ink);font-size:2.1rem;font-weight:850;margin:.3rem 0}.hero-subtitle{color:var(--muted);margin:0}
