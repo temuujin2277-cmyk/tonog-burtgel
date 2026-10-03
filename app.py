@@ -12,8 +12,16 @@ import streamlit as st
 from sqlalchemy import (Column, DateTime, Integer, MetaData, Numeric, String, Table,
                         Text, create_engine, delete, insert, inspect, select, text, update)
 
-st.set_page_config(page_title="ХААИС | Тоног төхөөрөмж", page_icon="🏫", layout="wide")
+from pathlib import Path
+
 LOGO_PATH = Path(__file__).parent / "assets" / "HAAIS.png"
+
+st.set_page_config(
+    page_title="ХААИС | Тоног төхөөрөмж",
+    page_icon=str(LOGO_PATH),
+    layout="wide"
+)
+
 STATUSES = ["Хэвийн", "Засвартай", "Эвдэрсэн", "Актласан"]
 ROLES = ["admin", "treasurer", "teacher", "viewer"]
 
