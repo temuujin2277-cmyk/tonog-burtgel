@@ -1,10 +1,12 @@
-"""ХААИС-ийн тоног төхөөрөмжийн бүртгэл — v5
+"""ХААИС-ийн тоног төхөөрөмжийн бүртгэл — v6
 Streamlit + SQLAlchemy + Supabase/Postgres.
 """
+import base64
 import hmac
+import html
 import io
 from datetime import datetime, date
-from pathlib import Path
+from urllib.parse import urlparse, parse_qs
 
 import pandas as pd
 import qrcode
@@ -13,9 +15,30 @@ from sqlalchemy import (Column, DateTime, Integer, MetaData, Numeric, String, Ta
                         Text, create_engine, delete, insert, inspect, select, text, update)
 
 st.set_page_config(page_title="ХААИС | Тоног төхөөрөмж", page_icon="🏫", layout="wide")
-LOGO_PATH = Path(__file__).parent / "assets" / "HAAIS.png"
 STATUSES = ["Хэвийн", "Засвартай", "Эвдэрсэн", "Актласан"]
 ROLES = ["admin", "treasurer", "teacher", "viewer"]
+
+LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+<circle cx="60" cy="60" r="56" fill="#0b6b43" stroke="#e7bd32" stroke-width="4"/>
+<circle cx="60" cy="60" r="48" fill="none" stroke="#ffffff" stroke-opacity=".25" stroke-width="1.5"/>
+<path d="M60 86V30" stroke="#e7bd32" stroke-width="3" stroke-linecap="round"/>
+<g fill="#e7bd32">
+<ellipse cx="60" cy="24" rx="4" ry="8"/>
+<ellipse cx="51" cy="42" rx="4" ry="8" transform="rotate(-35 51 42)"/>
+<ellipse cx="69" cy="42" rx="4" ry="8" transform="rotate(35 69 42)"/>
+<ellipse cx="51" cy="56" rx="4" ry="8" transform="rotate(-35 51 56)"/>
+<ellipse cx="69" cy="56" rx="4" ry="8" transform="rotate(35 69 56)"/>
+<ellipse cx="51" cy="70" rx="4" ry="8" transform="rotate(-35 51 70)"/>
+<ellipse cx="69" cy="70" rx="4" ry="8" transform="rotate(35 69 70)"/>
+</g>
+<text x="60" y="103" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="13" font-weight="700" fill="#ffffff" letter-spacing="1">ХААИС</text>
+</svg>"""
+
+
+def logo_html(size=64):
+    b64 = base64.b64encode(LOGO_SVG.encode("utf-8")).decode()
+    return f'<img src="data:image/svg+xml;base64,{b64}" width="{size}" height="{size}" style="display:block">'
+
 
 st.markdown("""
 <style>
@@ -131,6 +154,7 @@ def app_url(row):
 def require_login():
     role = st.session_state.get("role")
     if role: return role
+    st.markdown(logo_html(84), unsafe_allow_html=True)
     st.markdown("<div class='hero'><div class='hero-kicker'>ХААИС</div><div class='hero-title'>Нэвтрэх</div><p class='hero-subtitle'>Тоног төхөөрөмжийн бүртгэлийн систем</p></div>", unsafe_allow_html=True)
     with st.form("login"):
         password = st.text_input("Нууц үг", type="password")
@@ -141,14 +165,6 @@ def require_login():
             if matches(password, expected): st.session_state["role"] = candidate; st.rerun()
         st.error("Нууц үг буруу байна.")
     st.stop()
-
-
-def header(role):
-    with st.sidebar:
-        if LOGO_PATH.exists(): st.image(str(LOGO_PATH), width=90)
-        st.markdown("**ХААИС**  \nТоног төхөөрөмжийн систем")
-        st.caption(f"Эрх: {role}")
-        if st.button("Гарах", use_container_width=True): st.session_state.clear(); st.rerun()
 
 
 def overview(df):
@@ -179,7 +195,7 @@ def list_view(df):
     if df.empty: st.info("Одоогоор бүртгэл алга."); return
     a,b,c = st.columns([2,1,1]); query = a.text_input("🔍 Нэр, серийн дугаар, байршил хайх"); statuses = b.multiselect("Төлөв", STATUSES); locations = c.multiselect("Байршил", sorted(df.location.dropna().unique()))
     view=df.copy(); query=query.lower().strip()
-    if query: view=view[view.apply(lambda r: query in f"{r.name} {r.location} {r.serial_number} {r.registered_by}".lower(),axis=1)]
+    if query: view=view[view.apply(lambda r: query in f"{r['name']} {r['location']} {r['serial_number']} {r['registered_by']}".lower(),axis=1)]
     if statuses: view=view[view.status.isin(statuses)]
     if locations: view=view[view.location.isin(locations)]
     cols={"id":"ID","name":"Нэр","serial_number":"Серийн дугаар","location":"Байршил","quantity":"Тоо","status":"Төлөв","purchase_price":"Үнэ","registered_by":"Бүртгэсэн"}
@@ -250,12 +266,56 @@ def charts_view(df):
     except ImportError: st.info("Графикт requirements.txt дотор plotly нэмнэ үү.")
 
 
+def fmt_money(v):
+    try:
+        return f"{float(v):,.0f} ₮" if v not in (None, "") else "—"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def asset_detail(asset_id):
+    """QR кодоор нээгдэх нэг төхөөрөмжийн дэлгэрэнгүй хуудас."""
+    row = asset_by_id(asset_id)
+    if not row:
+        st.error("Ийм ID-тай бүртгэл олдсонгүй."); return
+    esc = lambda v: html.escape(str(v or "—"))
+    st.markdown(
+        f'<div class="hero"><div class="hero-kicker">Бүртгэл #{row["id"]}</div>'
+        f'<div class="hero-title">{esc(row["name"])}</div>'
+        f'<p class="hero-subtitle">{esc(row["location"])} · {esc(row["status"])}</p></div>',
+        unsafe_allow_html=True)
+    left, right = st.columns([2, 1])
+    with left:
+        info = {
+            "Серийн дугаар": row.get("serial_number"), "Тоо ширхэг": row.get("quantity"),
+            "Худалдан авсан": row.get("purchase_date"), "Үнэ": fmt_money(row.get("purchase_price")),
+            "Баталгаат хугацаа": row.get("warranty_until"), "Бүртгэсэн": row.get("registered_by"),
+            "Бүртгэсэн огноо": row.get("created_at"), "Сүүлд шинэчилсэн": row.get("updated_at"),
+            "Тайлбар": row.get("notes"),
+        }
+        for k, v in info.items():
+            st.markdown(f"**{k}:** {v if v not in (None, '') else '—'}")
+    with right:
+        if row.get("image_url"):
+            st.image(row["image_url"], use_container_width=True)
+        st.image(qr_png(app_url(row)), width=160)
+    with get_engine().connect() as conn:
+        rep = pd.read_sql_query(select(repairs).where(repairs.c.asset_id == int(asset_id)).order_by(repairs.c.id.desc()), conn)
+        tr = pd.read_sql_query(select(transfers).where(transfers.c.asset_id == int(asset_id)).order_by(transfers.c.id.desc()), conn)
+    st.markdown("### Засварын түүх")
+    if rep.empty: st.caption("Засварын түүх алга.")
+    else: st.dataframe(rep, hide_index=True, use_container_width=True)
+    st.markdown("### Шилжүүлгийн түүх")
+    if tr.empty: st.caption("Шилжүүлгийн түүх алга.")
+    else: st.dataframe(tr, hide_index=True, use_container_width=True)
+
+
 role = require_login()
 df = load_assets()
 
 # Sidebar navigation — өгөгдлийн логик өөрчлөгдөөгүй, зөвхөн UI-ийн navigation.
 with st.sidebar:
-    st.markdown('<div class="nav-title">◈  ХААИС</div><div class="nav-caption">Тоног төхөөрөмжийн систем</div>', unsafe_allow_html=True)
+    st.markdown(logo_html(72) + '<div class="nav-title" style="margin-top:.5rem">ХААИС</div><div class="nav-caption">Тоног төхөөрөмжийн систем</div>', unsafe_allow_html=True)
     st.markdown("---")
     st.markdown('<div class="nav-caption">ҮНДСЭН ЦЭС</div>', unsafe_allow_html=True)
     if role == "admin":
@@ -264,7 +324,7 @@ with st.sidebar:
         pages = ["⌂  Dashboard", "＋  Бүртгэх", "▦  Тоног төхөөрөмж", "⚒  Засвар", "↔  Шилжүүлэг", "▣  QR төв", "⇩  Тайлан"]
     else:
         pages = ["⌂  Dashboard", "▦  Тоног төхөөрөмж", "▣  QR төв"]
-    page = st.radio("Цэс", pages, label_visibility="collapsed", key="main_nav")
+    page = st.radio("Цэс", pages, label_visibility="collapsed", key="main_nav", on_change=st.query_params.clear)
     st.markdown("---")
     st.caption(f"Нэвтэрсэн эрх: {role.upper()}")
     if st.button("⎋  Гарах", use_container_width=True):
@@ -275,7 +335,18 @@ top_left, top_right = st.columns([7, 1])
 with top_left:
     st.markdown('<div class="page-title">Тоног төхөөрөмжийн бүртгэл</div><div class="page-caption">ХААИС-ийн хөрөнгө удирдлагын нэгдсэн систем</div>', unsafe_allow_html=True)
 with top_right:
-    if LOGO_PATH.exists(): st.image(str(LOGO_PATH), width=58)
+    st.markdown(logo_html(58), unsafe_allow_html=True)
+
+# QR кодоор (?id=5) орж ирсэн бол тухайн төхөөрөмжийн хуудсыг харуулна.
+scan_id = st.query_params.get("id")
+if scan_id:
+    if st.button("← Жагсаалт руу буцах"):
+        st.query_params.clear(); st.rerun()
+    if str(scan_id).isdigit():
+        asset_detail(int(scan_id))
+    else:
+        st.error("QR кодын холбоос буруу байна.")
+    st.stop()
 
 if page == "⌂  Dashboard":
     st.markdown('<div class="hero"><div class="hero-kicker">School asset management</div><div class="hero-title">Сайн байна уу, системийн хэрэглэгч</div><p class="hero-subtitle">Өнөөдрийн тоног төхөөрөмжийн бүртгэл, төлөв, үйл ажиллагааг нэг дороос хянаарай.</p></div>', unsafe_allow_html=True)
@@ -316,6 +387,10 @@ elif page == "▣  QR төв":
             try:
                 import cv2, numpy as np
                 value,_,_=cv2.QRCodeDetector().detectAndDecode(cv2.imdecode(np.frombuffer(camera.getvalue(),np.uint8),cv2.IMREAD_COLOR))
-                if value: st.success(f"QR холбоос: {value}")
+                if value:
+                    qid = parse_qs(urlparse(value).query).get("id", [None])[0]
+                    if qid and qid.isdigit():
+                        st.query_params["id"] = qid; st.rerun()
+                    st.warning(f"Энэ QR манай системийн бүртгэл биш байна: {value}")
                 else: st.warning("QR код танигдсангүй. Камераа ойртуулж дахин оролдоно уу.")
             except ImportError: st.info("QR camera-д opencv-python-headless шаардлагатай.")
