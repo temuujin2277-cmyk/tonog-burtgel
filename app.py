@@ -19,19 +19,31 @@ STATUSES = ["Хэвийн", "Засвартай", "Эвдэрсэн", "Актл�
 ROLES = ["admin", "treasurer", "teacher", "viewer"]
 
 LOGO_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-<circle cx="60" cy="60" r="56" fill="#0b6b43" stroke="#e7bd32" stroke-width="4"/>
-<circle cx="60" cy="60" r="48" fill="none" stroke="#ffffff" stroke-opacity=".25" stroke-width="1.5"/>
-<path d="M60 86V30" stroke="#e7bd32" stroke-width="3" stroke-linecap="round"/>
-<g fill="#e7bd32">
-<ellipse cx="60" cy="24" rx="4" ry="8"/>
-<ellipse cx="51" cy="42" rx="4" ry="8" transform="rotate(-35 51 42)"/>
-<ellipse cx="69" cy="42" rx="4" ry="8" transform="rotate(35 69 42)"/>
-<ellipse cx="51" cy="56" rx="4" ry="8" transform="rotate(-35 51 56)"/>
-<ellipse cx="69" cy="56" rx="4" ry="8" transform="rotate(35 69 56)"/>
-<ellipse cx="51" cy="70" rx="4" ry="8" transform="rotate(-35 51 70)"/>
-<ellipse cx="69" cy="70" rx="4" ry="8" transform="rotate(35 69 70)"/>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#1fa36c"/>
+<stop offset=".55" stop-color="#0b6b43"/>
+<stop offset="1" stop-color="#06402a"/>
+</linearGradient>
+<linearGradient id="top" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#f7de78"/>
+<stop offset="1" stop-color="#e7bd32"/>
+</linearGradient>
+</defs>
+<rect x="4" y="4" width="112" height="112" rx="28" fill="url(#bg)"/>
+<rect x="4" y="4" width="112" height="112" rx="28" fill="none" stroke="#ffffff" stroke-opacity=".18" stroke-width="1.5"/>
+<g stroke="#0b6b43" stroke-width="2" stroke-linejoin="round">
+<polygon points="60,26 90,43 60,60 30,43" fill="url(#top)"/>
+<polygon points="30,43 60,60 60,94 30,77" fill="#ffffff"/>
+<polygon points="60,60 90,43 90,77 60,94" fill="#cfe9da"/>
 </g>
-<text x="60" y="103" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="13" font-weight="700" fill="#ffffff" letter-spacing="1">ХААИС</text>
+<g fill="#0b6b43" opacity=".85">
+<polygon points="36,53 47,59.4 47,64.4 36,58"/>
+<polygon points="36,63 47,69.4 47,72.4 36,66"/>
+</g>
+<path d="M45 35 L60 43.5 L75 35" fill="none" stroke="#0b6b43" stroke-opacity=".35" stroke-width="1.5" stroke-linejoin="round"/>
+<circle cx="90" cy="90" r="17" fill="#e7bd32" stroke="#0b6b43" stroke-width="3"/>
+<path d="M82 90.5 L88 96.5 L99 84" fill="none" stroke="#0b6b43" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
 </svg>"""
 
 
